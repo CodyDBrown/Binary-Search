@@ -8,4 +8,4 @@ pandas-datareader==0.6.0
 pandocfilters==1.4.2
 schwimmbad==0.3.0
 scipy==1.1.0
-thejoker==0.2
+thejoker==0.2.0
