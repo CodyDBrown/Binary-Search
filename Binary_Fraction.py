@@ -1,5 +1,4 @@
 from astropy.table import Table, Column, vstack
-from astropy.io import fits
 import numpy as np
 from scipy.stats import chi2
 import astropy.units as u
@@ -52,7 +51,6 @@ class Binary_Fraction:
         else:
             return print('Period flag needs to be "L" or "U" not {}'.format(period))
 
-
         if P_buddy.value < 12:
             e_buddy = 0*u.one
         else:
@@ -63,7 +61,7 @@ class Binary_Fraction:
         a_buddy = a_buddy.to(u.AU)
 
         # Also need some angles of the orbit that we would see.
-        i_buddy = np.random.uniform(0, np.pi)*u.rad
+        i_buddy = np.random.uniform(0, 2*np.pi)*u.rad
 
          #These are some phase angles that depend on when we first see it.
         w_buddy = np.random.uniform(0, 2*np.pi)*u.rad
@@ -79,7 +77,10 @@ class Binary_Fraction:
         while r_peri.value < 5*self.AAS_TABLE['ISO_MEANR'][N]:
 
             m_buddy = np.random.uniform(m_min, M.to(u.jupiterMass).value)*u.jupiterMass
-            P_buddy = np.random.uniform(12,1000)*u.d
+            if period == 'U' or period == 'u':
+                P_buddy = np.random.uniform(12,1000)*u.d
+            elif period == 'L' or period == 'l':
+                P_buddy = np.random.lognormal(5.03,2.28)*u.d
             #P_buddy = np.random.lognormal(5.03,2.28)*u.d
             if P_buddy.value < 12:
                 e_buddy = 0*u.one
@@ -92,7 +93,7 @@ class Binary_Fraction:
             a_buddy = a_buddy.to(u.AU)
 
             # Also need some angles of the orbit that we would see.
-            i_buddy = np.random.uniform(0, np.pi)*u.rad
+            i_buddy = np.random.uniform(0, 2*np.pi)*u.rad
 
             #These are some phase angles that depend on when we first see it.
             w_buddy = np.random.uniform(0, 2*np.pi)*u.rad
@@ -102,13 +103,14 @@ class Binary_Fraction:
             r_peri = r_peri.to(u.solRad)
             in_case_of_emergency += 1
             if in_case_of_emergency > 9:
-                print("You got stuck!")
+                print("You got stuck!") # Never had this happen before so I might want to just get rid of it.
                 break
         # Now I can find the "K" paramiter based on these values.
         K_buddy = (m_buddy / (M + m_buddy)) * (n_foo * a_buddy * np.sin(i_buddy)) / np.sqrt(1-e_buddy**2)
         K_buddy = K_buddy.to(u.km / u.s)
         foo_list = [m_buddy, e_buddy, P_buddy, a_buddy, i_buddy, w_buddy,
                    phi_buddy, K_buddy, self.AAS_TABLE['APOGEE_ID'][N]]
+        # TODO: Make foo_list a dictionay. It will be easier to call foo_list['e'] rather than remember what element eccentricity is at
 
         return foo_list
 
@@ -138,8 +140,9 @@ class Binary_Fraction:
             err = (np.sqrt(self.AAS_TABLE['RADIAL_ERR'][N]**2 + jitter_value**2) )*u.km/u.s
         else:
             err = self.AAS_TABLE['RADIAL_ERR'][N]*u.km/u.s
+
         # This is some stuff that cy_rv_from_elements needs for it's time input. Not sure why but it doens't
-        #work without these few lines. i.e. DO NOT TOUCH!
+        # work without these few lines. i.e. DO NOT TOUCH!
         t_buddy = Time(Date, format = 'mjd')
 
         t_buddy = t_buddy.tcb.mjd
@@ -152,14 +155,18 @@ class Binary_Fraction:
 
         td0 = Time(td0, format = 'mjd')
 
-        #Makes the observed radial velocity in the binaries Barrycenter.
+        # Makes the observed radial velocity in the binaries Barrycenter.
         rv_buddy = cy_rv_from_elements(t_buddy, buddy_list[2].to(u.day).value, 1. , buddy_list[1].value, buddy_list[5].value,
                                          buddy_list[6].value, td0.tcb.mjd,
                                          anomaly_tol = 1E-10, anomaly_maxiter = 128)
 
-        #Then we move the velocity to be in our reference frame. The extra added term at the end is to simulate
-        #the fact that we wont observ the actual velocity every measurement will be off from the real value.
-        rv_buddy = (buddy_list[7] * rv_buddy + self.AAS_TABLE['VHELIO_AVG'][N] * u.km/ u.s) + np.random.normal(0, self.AAS_TABLE['VERR'][N], size = len(rv_buddy)) * u.km/u.s
+        # Then we move the velocity to be in our reference frame. This is the exact analytical radial velcity of a star
+        # with the given paramiters.
+        rv_buddy = (buddy_list[7] * rv_buddy + self.AAS_TABLE['VHELIO_AVG'][N] * u.km/ u.s)
+
+        # Add on some machine error
+        for n in range(len(rv_buddy)):
+            rv_buddy[n] += np.random.normal(0, self.AAS_TABLE['RADIAL_ERR'][N][n],) * u.km/u.s
 
         return rv_buddy, err, buddy_list
     # TODO: Get rid of the reduce option. I never use it and it just causes more
@@ -220,9 +227,13 @@ class Binary_Fraction:
     Need the same thing but this time with no buddy, assumes a single star with error and decided if it's in a binary or not
     """
     def fake_solo_detection(self,N, m_min, jitter, reduce):
-        jitter = 2*0.015**(1/3*self.AAS_TABLE["LOGG"][N])
+        jitter = 2 * 0.015 ** (1 / 3 * self.AAS_TABLE["LOGG"][N])
         #Make some fake solo RV measurments
-        solo_RV = np.random.normal(self.AAS_TABLE['VHELIO_AVG'][N], self.AAS_TABLE['VERR'][N] ,size = len(self.AAS_TABLE["RADIALV"][N]))
+        solo_RV = []
+        for n in self.AAS_TABLE['RADIAL_ERR'][N]:
+            rv_foo = np.random.normal(self.AAS_TABLE['VHELIO_AVG'][N], n,)
+            solo_RV.append(rv_foo)
+
         #Keep the real ovserved error
         solo_err = np.sqrt(self.AAS_TABLE['RADIAL_ERR'][N]**2 + jitter**2)
         #Don't think I need the date, but my old stuff has it so I'm keeping it
@@ -362,7 +373,6 @@ class Binary_Fraction:
             for N in range(len(self.AAS_TABLE)):
                 foo_rv, foo_err, foo_table = self.fake_binary_detection(N,m_min, period, jitter, reduce)
                 final_table = vstack([final_table, foo_table])
-            print('Done with loop', foo_exit)
             foo_exit += 1
         return final_table
     """Does the binary fraction check for the real data table that was put into
