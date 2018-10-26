@@ -112,7 +112,7 @@ class Binary_Data_Clean2:
         return AAS_RG
         """
 
-    def iso_fit(self,all_average_data,iso_data, limit = 0.1):
+    def iso_fit(self,all_average_data,iso_data, limit = 0.01):
         """
         Isochrone fitting. I have to turn all_average_data into an Astropy table
         just because I don't know how to do it as the data object. I should figure
@@ -148,7 +148,7 @@ class Binary_Data_Clean2:
             star_logg = all_average_data['LOGG'][j]
             star_feh  = all_average_data['FE_H'][j]
 
-            gd, = np.where(( (np.abs(iso_data['LOGTE']-np.log10(star_teff)) < limit) &
+            gd, = np.where(( (np.abs(10**iso_data['LOGTE']-(star_teff)) < 100) &
                     (np.abs(iso_data['LOGG']-star_logg) < limit) &
                     (np.abs(iso_data['FEH']-star_feh) < limit) ) )
 
@@ -160,9 +160,10 @@ class Binary_Data_Clean2:
                 iso_medianM[j] = np.median(iso_data["MASS"][gd])
                 iso_stdM[j] = np.std(iso_data["MASS"][gd])
 
-                iso_meanL[j] = np.mean(iso_data['LOGL'][gd])
-                iso_medianL[j] = np.median(iso_data["LOGL"][gd])
-                iso_stdL[j] = np.std(iso_data["LOGL"][gd])
+                foo =10**iso_data['LOGL'][gd] # Isochrone table is in log10(L)
+                iso_meanL[j] = np.mean(foo)
+                iso_medianL[j] = np.median(foo)
+                iso_stdL[j] = np.std(foo)
             else:
                 iso_meanM[j] = np.nan
                 iso_medianM[j] = np.nan
@@ -176,9 +177,9 @@ class Binary_Data_Clean2:
         all_average_data["ISO_MEDIANM"] = iso_medianM * u.solMass
         all_average_data['ISO_STDM'] = iso_stdM * u.solMass
 
-        all_average_data['ISO_MEANL'] = iso_meanL * u.solLum
-        all_average_data["ISO_MEDIANL"] = iso_medianL * u.solLum
-        all_average_data['ISO_STDL'] = iso_stdL * u.solLum
+        all_average_data['ISO_MEANL'] = (iso_meanL) * u.solLum
+        all_average_data["ISO_MEDIANL"] = (iso_medianL) * u.solLum
+        all_average_data['ISO_STDL'] = (iso_stdL) * u.solLum
 
         iso_meanR = np.sqrt( all_average_data['ISO_MEANL'] / (4 * np.pi * sigma_sb * (all_average_data["TEFF"]*u.K)**4 ) ).to(u.solRad)
         all_average_data['ISO_MEANR'] = iso_meanR
