@@ -39,7 +39,7 @@ class Binary_Fraction:
         ----------
         List of the physical paramiters randomly made from the companion star.
         """
-        M = self.AAS_TABLE['ISO_MEANM'][N]*u.solMass
+        M = self.AAS_TABLE['T_MASS'][N]*u.solMass
         #Make the fake companion that we want orbiting our primary star
         m_buddy = np.random.uniform(m_min, M.to(u.jupiterMass).value)*u.jupiterMass #For reference the 1 solMas = 1047 jupMas
 
@@ -54,18 +54,18 @@ class Binary_Fraction:
         if P_buddy.value < 12:
             e_buddy = 0*u.one
         else:
-            e_buddy = np.random.uniform(0, 0.93)*u.one
+            e_buddy = np.random.uniform(0.2, 0.93)*u.one
         n_foo = (2 * np.pi) / P_buddy
 
         a_buddy = np.cbrt(( (G*(M + m_buddy)) / (4*np.pi**2) ) * P_buddy**2 )
         a_buddy = a_buddy.to(u.AU)
 
         # Also need some angles of the orbit that we would see.
-        i_buddy = np.random.uniform(0, 2*np.pi)*u.rad
+        i_buddy = np.random.uniform(0, np.pi)*u.rad
 
          #These are some phase angles that depend on when we first see it.
-        w_buddy = np.random.uniform(0, 2*np.pi)*u.rad
-        phi_buddy = np.random.uniform(0, 2*np.pi)*u.rad
+        w_buddy = np.random.uniform(0, np.pi)*u.rad
+        phi_buddy = np.random.uniform(0, np.pi)*u.rad
 
         #Make sure the closest point of the orbit isn't so close that we have to worry about title effects.
         r_peri = (1-e_buddy)*a_buddy
@@ -74,7 +74,8 @@ class Binary_Fraction:
         #If the orbit is so close that we would have to consider title effects then we want to pick a different
         #set of orbital paramiters.
         in_case_of_emergency = 0 #Variable that will get us out of the loop if we're stuck forever
-        while r_peri.value < 5*self.AAS_TABLE['ISO_MEANR'][N]:
+
+        while r_peri.value < 5*self.AAS_TABLE['T_RADIUS'][N]:
 
             m_buddy = np.random.uniform(m_min, M.to(u.jupiterMass).value)*u.jupiterMass
             if period == 'U' or period == 'u':
@@ -85,7 +86,7 @@ class Binary_Fraction:
             if P_buddy.value < 12:
                 e_buddy = 0*u.one
             else:
-                e_buddy = np.random.uniform(0,.93)*u.one
+                e_buddy = np.random.uniform(0.2, .93)*u.one
             n = (2*np.pi) / P_buddy
 
             #From those paramiters we can use keplers law to find the semi-major axis
@@ -93,16 +94,16 @@ class Binary_Fraction:
             a_buddy = a_buddy.to(u.AU)
 
             # Also need some angles of the orbit that we would see.
-            i_buddy = np.random.uniform(0, 2*np.pi)*u.rad
+            i_buddy = np.random.uniform(0, np.pi)*u.rad
 
             #These are some phase angles that depend on when we first see it.
-            w_buddy = np.random.uniform(0, 2*np.pi)*u.rad
-            phi_buddy = np.random.uniform(0, 2*np.pi)*u.rad
+            w_buddy = np.random.uniform(0, np.pi)*u.rad
+            phi_buddy = np.random.uniform(0, np.pi)*u.rad
             #Make sure the closest point of the orbit isn't so close that we have to worry about title effects.
             r_peri = (1-e_buddy)*a_buddy
             r_peri = r_peri.to(u.solRad)
             in_case_of_emergency += 1
-            if in_case_of_emergency > 9:
+            if in_case_of_emergency > 15:
                 print("You got stuck!") # Never had this happen before so I might want to just get rid of it.
                 break
         # Now I can find the "K" paramiter based on these values.
@@ -165,8 +166,8 @@ class Binary_Fraction:
         rv_buddy = (buddy_list[7] * rv_buddy + self.AAS_TABLE['VHELIO_AVG'][N] * u.km/ u.s)
 
         # Add on some machine error
-        for n in range(len(rv_buddy)):
-            rv_buddy[n] += np.random.normal(0, self.AAS_TABLE['RADIAL_ERR'][N][n],) * u.km/u.s
+        for n in range(len(err.value)):
+            rv_buddy[n] += np.random.normal(0, err.value[n]) * u.km/u.s
 
         return rv_buddy, err, buddy_list
     # TODO: Get rid of the reduce option. I never use it and it just causes more
@@ -194,23 +195,23 @@ class Binary_Fraction:
         Uses the chi_sq_value to then find the P-Value then set the variable Binary in buddy table to be True
         or False depending on the threshold we set.
         """
-        #First call the fake_rv function
+        # First call the fake_rv function
         f_radial_velocity, f_err, bud_list = self.fake_rv_binary(N, m_min, period, jitter)
-        #Find the chi^2 for the fake rv values
+        # Find the chi^2 for the fake rv values
         chi_squared = self.chi_sq_mean(f_radial_velocity, f_err, reduce)
-        #Find the p-value from that chi^2
+        # Find the p-value from that chi^2
         p_value = 1 - chi2.cdf(chi_squared, len(f_radial_velocity) - 1)
-        #print(chi_squared, p_value)
-        #Make the buddy table
+        # print(chi_squared, p_value)
+        # Make the buddy table
         bud_table = self.buddy_table(bud_list)
-        #Set the 'P-value' in the buddy table
+        # Set the 'P-value' in the buddy table
         bud_table['P-value'] = p_value
-        #Check if it's a binary or not.
+        # Check if it's a binary or not.
         if p_value < 0.05:
             f_binary = True
         else:
             f_binary = False
-        #Put the result in the table
+        # Put the result in the table
         bud_table['Binary'] = f_binary
         """
         date = self.AAS_TABLE['RADIAL_DATE'][N]
@@ -226,22 +227,23 @@ class Binary_Fraction:
     """
     Need the same thing but this time with no buddy, assumes a single star with error and decided if it's in a binary or not
     """
-    def fake_solo_detection(self,N, m_min, jitter, reduce):
+    def fake_solo_detection(self,N, reduce):
         jitter = 2 * 0.015 ** (1 / 3 * self.AAS_TABLE["LOGG"][N])
-        #Make some fake solo RV measurments
+        # Keep the real ovserved error
+        solo_err = np.sqrt(self.AAS_TABLE['RADIAL_ERR'][N] ** 2 + jitter ** 2)
+        # Make some fake solo RV measurments
         solo_RV = []
-        for n in self.AAS_TABLE['RADIAL_ERR'][N]:
+        for n in solo_err:
             rv_foo = np.random.normal(self.AAS_TABLE['VHELIO_AVG'][N], n,)
             solo_RV.append(rv_foo)
 
-        #Keep the real ovserved error
-        solo_err = np.sqrt(self.AAS_TABLE['RADIAL_ERR'][N]**2 + jitter**2)
-        #Don't think I need the date, but my old stuff has it so I'm keeping it
+
+        # Don't think I need the date, but my old stuff has it so I'm keeping it
         Date = self.AAS_TABLE['RADIAL_DATE'][N]
-        #Finds the chi_squared and p-value
+        # Finds the chi_squared and p-value
         solo_chi_squared = self.chi_sq_mean(solo_RV, solo_err, reduce)
         p_value = 1 - chi2.cdf(solo_chi_squared, len(solo_RV) - 1)
-        #Check if it's a binary or not.
+        # Check if it's a binary or not.
         if p_value < 0.05:
             solo_binary = True
         else:
@@ -258,13 +260,13 @@ class Binary_Fraction:
         if it's larger than b_fraction then we run fake_solo_detection. Returns the P-value and
         the boolian 'Binary' for each run
         """
-        #Pick a random number between 0 and 1.
+        # Pick a random number between 0 and 1.
         foo_random_number = np.random.uniform()
         if foo_random_number < b_fraction:
             foo_rv, foo_err, foo_table = self.fake_binary_detection(N,m_min, period, jitter, reduce)
             return foo_table['P-value'], foo_table['Binary']
         else:
-            foo_pvalue, foo_binary = self.fake_solo_detection(N,m_min, jitter, reduce)
+            foo_pvalue, foo_binary = self.fake_solo_detection(N, reduce)
             return foo_pvalue, foo_binary
 
 
@@ -325,7 +327,7 @@ class Binary_Fraction:
                         first element will be the upper bound error, second will
                         be the lower bound error.
         """
-        #Make empty arrays for the answers to be put in.
+        # Make empty arrays for the answers to be put in.
         detection_rate = []
         p_value_result = []
         binary_result_b = []
