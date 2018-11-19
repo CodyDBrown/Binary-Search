@@ -47,7 +47,7 @@ class Binary_Fraction:
         if period == 'U' or period == 'u':
             P_buddy = np.random.uniform(12,1000)*u.d
         elif period == 'L' or period == 'l':
-            P_buddy = 10**np.random.normal(5.03,2.28)*u.d
+            P_buddy = 10**np.random.normal(3.03,2.28)*u.d
         else:
             return print('Period flag needs to be "L" or "U" not {}'.format(period))
 
@@ -81,7 +81,7 @@ class Binary_Fraction:
             if period == 'U' or period == 'u':
                 P_buddy = np.random.uniform(12,1000)*u.d
             elif period == 'L' or period == 'l':
-                P_buddy = 10**np.random.normal(5.03,2.28)*u.d
+                P_buddy = 10**np.random.normal(3.03,2.28)*u.d
             #P_buddy = np.random.lognormal(5.03,2.28)*u.d
             if P_buddy.value < 12:
                 e_buddy = 0*u.one
