@@ -32,34 +32,30 @@ class BinaryFraction2:
                 Units of the period is in days
 
         """
-        r_peri = 0*u.solRad
+        r_peri = 0*u.solRad # Initial set up to be zero so we enter the while loop
         in_case_of_emergency = 0  # Variable that will get us out of the loop if we're stuck forever
-        while r_peri.value < 5*self.AAS_TABLE['ISO_MEANR'][N]:
-            M = self.AAS_TABLE['ISO_MEANM'][N]*u.solMass    # Mass of the main star
+        while r_peri.value < 1.1*self.AAS_TABLE['ISO_MEANR'][N]:
+            M = self.AAS_TABLE['ISO_MEANM'][N] * u.solMass
             # Make the fake companion that we want orbiting our primary star
-            m = (m_min*u.jupiterMass).to(u.solMass) # Convert the input minimum mass to Solar masses
-
-            m_buddy = (np.random.uniform(m.value, M.value))*u.solMass  # Uniform mass range for secondary star.
-                                                # For reference the 1 solMas = 1047 jupMas
+            m_buddy = np.random.uniform(m_min, M.to(u.jupiterMass).value) * u.jupiterMass  # For reference the 1 solMas = 1047 jupMas
 
             #Checks what kind of period distribution we want
             if period[0] == 'U':
                 P_buddy = np.random.uniform(period[1],period[2])*u.d
             elif period[0] == 'L':
                 P_buddy = (10**np.random.normal(period[1], period[2]))*u.d
-
                 # Upper bound on what the period can be. Just taken from Spencer
                 #TODO Calculate this for the LMC and SMC. Right now i'm just using this from the Spencer papter but It
                 # should be calculated for each galaxy
-                while P_buddy.value > 10**6.51:
-                    P_buddy = (10 ** np.random.normal(period[1], period[2])) * u.d
+                #while P_buddy.value > 10**6.51:
+                #    P_buddy = (10 ** np.random.normal(period[1], period[2])) * u.d
 
             # Catch if input is wrong.
             else:
                 return print('Period flag needs to be "L" or "U" not {}'.format(period))
 
             # Calculate the semi-major axis for the orbit
-            a_buddy = np.cbrt(((G * (M + m_buddy)) / (4 * np.pi ** 2)) * P_buddy ** 2)
+            a_buddy = np.cbrt(((G * (M + m_buddy)) / (4 * np.pi ** 2)) * P_buddy**2)
             a_buddy = a_buddy.to(u.AU) # Convert it to AU
             if P_buddy.value < 12:
                 e_buddy = 0*u.one
@@ -67,23 +63,25 @@ class BinaryFraction2:
                 e_buddy = np.random.uniform(0, 0.93)*u.one
             n_foo = (2 * np.pi) / P_buddy
 
-            # Also need some angles of the orbit that we would see.
-            i_buddy = np.random.uniform(0, np.pi)*u.rad
-
-             #These are some phase angles that depend on when we first see it.
-            w_buddy = np.random.uniform(0, np.pi)*u.rad
-            phi_buddy = np.random.uniform(0, np.pi)*u.rad
-
-            #Make sure the closest point of the orbit isn't so close that we have to worry about title effects.
-            r_peri = (1-e_buddy)*a_buddy
+            # Make sure the closest point of the orbit isn't so close that we have to worry about title effects.
+            r_peri = (1 - e_buddy) * a_buddy
             r_peri = r_peri.to(u.solRad)
 
             in_case_of_emergency += 1
             if in_case_of_emergency > 20:
-                print("You got stuck!") # #TODO Need to come up with a better way to handle these cases.
+                print("You got stuck!")  # #TODO Need to come up with a better way to handle these cases.
                 break
+
+        # Also need some angles of the orbit that we would see.
+        i_buddy = np.random.uniform(0, np.pi)*u.rad
+
+        #These are some phase angles that depend on when we first see it.
+        w_buddy = np.random.uniform(0, np.pi)*u.rad
+        phi_buddy = np.random.uniform(0, np.pi)*u.rad
+
+
         # Now I can find the "K" paramiter based on these values.
-        K_buddy = (m_buddy / (M + m_buddy)) * (n_foo * a_buddy * np.sin(i_buddy)) / np.sqrt(1-e_buddy**2)
+        K_buddy = (m_buddy / (M + m_buddy)) * (n_foo * a_buddy * np.sin(i_buddy)) / np.sqrt(1 - e_buddy ** 2)
         K_buddy = K_buddy.to(u.km / u.s)
         buddy_dict = {'m': m_buddy, 'e': e_buddy, 'P': P_buddy, "a": a_buddy, "i": i_buddy,
                       "w": w_buddy, "phi": phi_buddy, "K": K_buddy, "ID": self.AAS_TABLE["APOGEE_ID"][N]}
@@ -106,6 +104,51 @@ class BinaryFraction2:
                          )
         return b_table
 
+    """ 
+    Define a bunch of smaller functions I need to get the radial velocity values
+    """
+    def _mean_anom(self,Date, P, phi):
+        return 2*np.pi*Date/P - phi
+
+    def _g(self, E, M, ec):
+        return E - ec*np.sin(E) - M
+
+    def _gp(self, E, ec):
+        return 1 - ec*np.cos(E)
+
+    def _NR_E(self, M, ec):
+        E = []
+        for m in M:
+            e_i = m  # Start with E_i = M
+            delta = 1  # Give it a value to enter the loop
+            while abs(delta) > 1e-8:
+                e_i1 = e_i - self._g(e_i, m, ec) / self._gp(e_i, ec)
+                delta = e_i1 - e_i
+                e_i = e_i1
+                # print(e_i, e_i1, delta)
+            assert self._g(e_i1, m, ec) < 1e-8  # Double check things work the right way
+            E.append(e_i1)
+        return np.array(E)
+
+    def _h(self, f, E, ec):
+        return np.cos(f) - (np.cos(E) - ec) / (1 - ec * np.cos(E))
+
+    def _hp(self, f):
+        return -1 * np.sin(f)
+
+    def _NR_f(self, E, ec):
+        f = []
+        for e in E:
+            f_i = e  # Start with E_i = M
+            delta = 1  # Give it a value to enter the loop
+            while abs(delta) > 1e-8:
+                f_i1 = f_i - self._h(f_i, e, ec) / self._hp(f_i)
+                delta = f_i1 - f_i
+                f_i = f_i1
+
+            assert self._h(f_i1, e, ec) < 1e-8
+            f.append(f_i1)
+        return np.array(f)
 
     def fake_rv_binary(self, N, m_min, period, jitter):
         """
@@ -121,39 +164,49 @@ class BinaryFraction2:
         else:
             err = self.AAS_TABLE['RADIAL_ERR'][N]*u.km/u.s
 
-        # This is some stuff that cy_rv_from_elements needs for it's time input. Not sure why but it doens't
-        # work without these few lines. i.e. DO NOT TOUCH!
-        t_buddy = Time(date, format = 'jd')
+        # # This is some stuff that cy_rv_from_elements needs for it's time input. Not sure why but it doens't
+        # # work without these few lines. i.e. DO NOT TOUCH!
+        # t_buddy = Time(date, format = 'mjd')
+        #
+        # t_buddy = t_buddy.tcb.mjd
+        #
+        # procb = ArrayProcessor(t_buddy)
+        #
+        # t_buddy, = procb.prepare_arrays()
+        #
+        # td0 = t_buddy[0]
+        #
+        # td0 = Time(td0, format = 'mjd')
+        #
+        # # Makes the observed radial velocity in the binaries Barrycenter.
+        # # buddy_dict = [m_buddy, e_buddy, P_buddy, a_buddy, i_buddy, w_buddy,
+        # #           phi_buddy, K_buddy, self.AAS_TABLE['APOGEE_ID'][N]]
+        #
+        # rv_buddy = cy_rv_from_elements(t_buddy, buddy_dict["P"].to(u.day).value, 1. , buddy_dict["e"].value, buddy_dict["w"].value,
+        #                                buddy_dict["phi"].value, td0.tcb.mjd,
+        #                                anomaly_tol = 1E-10, anomaly_maxiter = 128)
+        #
+        # # Then we move the velocity to be in our reference frame. This is the exact analytical radial velcity of a star
+        # # with the given paramiters.
+        # rv_buddy = (buddy_dict["K"] * rv_buddy + self.AAS_TABLE['VHELIO_AVG'][N] * u.km/ u.s)
 
-        t_buddy = t_buddy.tcb.mjd
+        M = 2 * np.pi / buddy_dict['P'].value * date - buddy_dict['phi'].value
 
-        procb = ArrayProcessor(t_buddy)
-
-        t_buddy, = procb.prepare_arrays()
-
-        td0 = t_buddy[0]
-
-        td0 = Time(td0, format = 'jd')
-
-        # Makes the observed radial velocity in the binaries Barrycenter.
-        # buddy_dict = [m_buddy, e_buddy, P_buddy, a_buddy, i_buddy, w_buddy,
-        #           phi_buddy, K_buddy, self.AAS_TABLE['APOGEE_ID'][N]]
-
-        rv_buddy = cy_rv_from_elements(t_buddy, buddy_dict["P"].to(u.day).value, 1. , buddy_dict["e"].value, buddy_dict["w"].value,
-                                         buddy_dict["phi"].value, td0.tcb.mjd,
-                                         anomaly_tol = 1E-10, anomaly_maxiter = 128)
-
-        # Then we move the velocity to be in our reference frame. This is the exact analytical radial velcity of a star
-        # with the given paramiters.
-        rv_buddy = (buddy_dict["K"] * rv_buddy + self.AAS_TABLE['VHELIO_AVG'][N] * u.km/ u.s)
+        E = self._NR_E(M, buddy_dict['e'].value)
+        f = self._NR_f(E, buddy_dict['e'].value)
+        rv_buddy = buddy_dict['K']*(np.cos(buddy_dict['w'].value + f) + buddy_dict['e'].value * np.cos(buddy_dict['w']))
+        rv_buddy += self.AAS_TABLE['VHELIO_AVG'][N]*u.km/u.s
 
         # Add on some machine error
-        for n in range(len(err.value)):
-            rv_buddy[n] += np.random.normal(0, err.value[n]) * u.km/u.s
+        # for n in range(len(self.AAS_TABLE['RADIAL_ERR'][N])):
+        #     rv_buddy[n] += np.random.normal(0, self.AAS_TABLE['RADIAL_ERR'][N][n]) * u.km/u.s
+        for n in range(len(err)):
+            rv_buddy[n] += np.random.normal(0, err[n].value) * u.km/u.s
 
         return rv_buddy, err, buddy_dict
     # TODO: Get rid of the reduce option. I never use it and it just causes more
     #       problems then it's worth.
+
     def chi_sq_mean(self, RV, err):
         """
         I want to fit some radial velocity measurments to a strait line of the average value. The logic goes
@@ -165,8 +218,9 @@ class BinaryFraction2:
         RV: Radial velocity values
         err: the error in those radial velocity values
         """
-        chi_sq_value = np.sum((RV - np.mean(RV))**2 / (err)**2)
+        chi_sq_value = np.sum((RV - np.mean(RV))**2 / err**2)
         return chi_sq_value
+
     def fake_binary_detection(self, N, m_min, period, jitter):
         """
         Uses the chi_sq_value to then find the P-Value then set the variable Binary in buddy table to be True
@@ -175,7 +229,7 @@ class BinaryFraction2:
         # First call the fake_rv function
         f_radial_velocity, f_err, bud_dict = self.fake_rv_binary(N, m_min, period, jitter)
         # Find the chi^2 for the fake rv values
-        chi_squared = self.chi_sq_mean(f_radial_velocity, f_err, reduce)
+        chi_squared = self.chi_sq_mean(f_radial_velocity, f_err,)
         # Find the p-value from that chi^2
         p_value = 1 - chi2.cdf(chi_squared, len(f_radial_velocity) - 1)
         # print(chi_squared, p_value)
@@ -195,7 +249,7 @@ class BinaryFraction2:
     """
     Need the same thing but this time with no buddy, assumes a single star with error and decided if it's in a binary or not
     """
-    def fake_solo_detection(self,N, jitter):
+    def fake_solo_detection(self, N, jitter):
         if jitter:
             jit = 2 * 0.015 ** (1 / 3 * self.AAS_TABLE["LOGG"][N])
             solo_err = np.sqrt(self.AAS_TABLE['RADIAL_ERR'][N] ** 2 + jit ** 2)
@@ -203,7 +257,7 @@ class BinaryFraction2:
             solo_err = self.AAS_TABLE['RADIAL_ERR'][N]
         # Make some fake solo RV measurments
         solo_RV = []
-        for n in solo_err:
+        for n in self.AAS_TABLE['RADIAL_ERR'][N]:
             rv_foo = np.random.normal(self.AAS_TABLE['VHELIO_AVG'][N], n)
             solo_RV.append(rv_foo)
         # Finds the chi_squared and p-value
@@ -368,20 +422,20 @@ class BinaryFraction2:
         ----------
         beta:   List of the different beta values for each combination of velocity points
         """
-        assert len(rv) == len(err) # Check to make sure they are the same length
+        assert len(rv) == len(err)  # Check to make sure they are the same length
         beta = []
         for n in range(len(rv)):
             for m in range(n + 1, len(rv)):
                 v = np.abs(rv[m] - rv[n])
                 errs = np.sqrt(err[n] ** 2 + err[m] ** 2)
                 beta.append(v / errs)
-        assert len(beta) == len(rv)*(len(rv) -1)/2 # Again sanity check to make sure it worked
+        assert len(beta) == len(rv)*(len(rv) -1)/2  # Again sanity check to make sure it worked
         return beta
 
     # Need to Find a beta distribution for Model data.
     def _betamod(self, N, m_min, period, jitter, b_fraction):
         binary_rng = np.random.uniform()
-        if binary_rng < b_fraction: # Then we're in a binary
+        if binary_rng < b_fraction:  # Then we're in a binary
             fake_rv, fake_err, buddy_dict = self.fake_rv_binary(N, m_min, period, jitter)
             b = self._beta(fake_rv, fake_err)
             return b
@@ -393,6 +447,9 @@ class BinaryFraction2:
                 solo_err = self.AAS_TABLE['RADIAL_ERR'][N]
             # Make some fake solo RV measurments
             solo_RV = []
+            # for n in self.AAS_TABLE['RADIAL_ERR'][N]:
+            #     rv_foo = np.random.normal(self.AAS_TABLE['VHELIO_AVG'][N], n)
+            #     solo_RV.append(rv_foo)
             for n in solo_err:
                 rv_foo = np.random.normal(self.AAS_TABLE['VHELIO_AVG'][N], n)
                 solo_RV.append(rv_foo)
@@ -416,7 +473,10 @@ class BinaryFraction2:
         """
         beta_data = []
         for J in range(len(self.AAS_TABLE)):
-            b = self._beta(self.AAS_TABLE['RADIALV'][J], self.AAS_TABLE['RADIAL_ERR'][J])
+            jit = 2 * 0.015 ** (1 / 3 * self.AAS_TABLE["LOGG"][J])
+            #jit = 0
+            err = np.sqrt(self.AAS_TABLE['RADIAL_ERR'][J]**2 + jit**2)
+            b = self._beta(self.AAS_TABLE['RADIALV'][J], err)
             beta_data.append(b)
         beta_data = [item for sublist in beta_data for item in sublist]
         return beta_data
@@ -435,7 +495,7 @@ class BinaryFraction2:
             rd_err = self.AAS_TABLE['RADIAL_ERR'][K]
             rd_jitter = 2*0.015**(1/3*self.AAS_TABLE["LOGG"][K])
             rd_err = np.sqrt(rd_err**2 + rd_jitter**2)
-            rd_chi_squared = self.chi_sq_mean(rd_rv, rd_err, False)
+            rd_chi_squared = self.chi_sq_mean(rd_rv, rd_err,)
             rd_p_value = 1 - chi2.cdf(rd_chi_squared, len(rd_rv)-1)
             rd_p_value_array.append(rd_p_value)
         for i in rd_p_value_array:
