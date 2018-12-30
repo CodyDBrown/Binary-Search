@@ -42,8 +42,8 @@ class SyntheticTables:
         """
         r_peri = 0 * u.solRad  # Initial set up to be zero so we enter the while loop
         in_case_of_emergency = 0  # Variable that will get us out of the loop if we're stuck forever
-        while r_peri.value < 1.1 * self.AAS_TABLE['ISO_MEANR'][N]:
-            M = self.AAS_TABLE['ISO_MEANM'][N] * u.solMass
+        while r_peri.value < 1.1 * self.aas_table['ISO_MEANR'][N]:
+            M = self.aas_table['ISO_MEANM'][N] * u.solMass
             # Make the fake companion that we want orbiting our primary star
             m_buddy = np.random.uniform(m_min, M.to(
                 u.jupiterMass).value) * u.jupiterMass  # For reference the 1 solMas = 1047 jupMas
@@ -92,7 +92,7 @@ class SyntheticTables:
         K_buddy = (m_buddy / (M + m_buddy)) * (n_foo * a_buddy * np.sin(i_buddy)) / np.sqrt(1 - e_buddy ** 2)
         K_buddy = K_buddy.to(u.km / u.s)
         buddy_dict = {'m': m_buddy, 'e': e_buddy, 'P': P_buddy, "a": a_buddy, "i": i_buddy,
-                      "w": w_buddy, "phi": phi_buddy, "K": K_buddy, "ID": self.AAS_TABLE["APOGEE_ID"][N]}
+                      "w": w_buddy, "phi": phi_buddy, "K": K_buddy, "ID": self.aas_table["APOGEE_ID"][N]}
 
         return buddy_dict
 
@@ -145,22 +145,18 @@ class SyntheticTables:
         :param b:
         :return: jit
         """
-        return 10 ** (a - b * self.AAS_TABLE['LOGG'][N])
+        return 10 ** (a - b * self.aas_table['LOGG'][N])
 
-    def fake_rv_binary(self, N, m_min, period, jitter, a, b):
+    def fake_rv_binary(self, N, m_min, period,):
         """
         After I have a set of paramiters form the buddy_values I want to make a fake Radial Velocity Measurment
         based on those values and the Primary Stars Values.
         """
         buddy_dict = self.buddy_values(N, m_min, period)
-        date = self.AAS_TABLE['RADIAL_DATE'][N]
+        date = self.aas_table['RADIAL_DATE'][N]
 
-        if jitter:
-            jit = self._jitter(N, a, b)
 
-            err = (np.sqrt(self.AAS_TABLE['RADIAL_ERR'][N] ** 2 + jit ** 2)) * u.km / u.s
-        else:
-            err = self.AAS_TABLE['RADIAL_ERR'][N] * u.km / u.s
+        err = self.aas_table['RADIAL_ERR'][N]
 
         M = 2 * np.pi / buddy_dict['P'].value * date - buddy_dict['phi'].value
 
@@ -174,11 +170,13 @@ class SyntheticTables:
         f = optimize.newton(self._h, f0, fprime=self._hp, args=(E, buddy_dict['e'].value))
 
         rv_buddy = buddy_dict['K'] * (np.cos(buddy_dict['w'].value + f) + buddy_dict['e'].value * np.cos(buddy_dict['w']))
-        rv_buddy += self.AAS_TABLE['VHELIO_AVG'][N] * u.km / u.s
+        #print(rv_buddy.value)
+        rv_buddy = self.aas_table['VHELIO_AVG'][N] + rv_buddy.value
+        #print(rv_buddy)
 
         rv_buddy += err * np.random.normal(0, 1, len(rv_buddy))  # This should be the same as the for loop in the comment
-
-        return rv_buddy, err, buddy_dict
+        # print("Did we end?")
+        return rv_buddy, err, date, buddy_dict
 
 
     def buddy_table(self, buddy_dict):
@@ -198,7 +196,7 @@ class SyntheticTables:
                          )
         return b_table
 
-    def buddy_table_maker(self, m_min, period, jitter, a, b, times):
+    def buddy_array_maker(self, m_min, period, times):
 
         # Because I'm a good programmer I'm going to make empty arrays of zeros to store my answers in. This is to make
         # sure that we alocate enough memory when we start and don't run into memory problems an hour into the program running
@@ -212,25 +210,47 @@ class SyntheticTables:
         phi_array = np.zeros(len(self.aas_table) * times)
         k_array = np.zeros(len(self.aas_table) * times)
 
-        radial_velocity_array = np.zeros(len(self.aas_table) * times)
-        error_array = np.zeros(len(self.aas_table) * times)
+        radial_velocity_array = [None]*(len(self.aas_table) * times)
+        error_array = [None]*(len(self.aas_table) * times)
+        date_array =  [None]*(len(self.aas_table) * times)
 
+        m1_array =  np.zeros(len(self.aas_table) * times)
+        logg_array = np.zeros(len(self.aas_table) * times)
+        time = 0
         while time < times:
             for n in range(len(self.aas_table)):
-                radial_velocity, error, buddy_dictionary = self.fake_rv_binary(n, m_min, period, jitter, a, b)
-                radial_velocity_array[n + n*time] = radial_velocity
-                error_array[n + n*time] = error
-
-                secondary_mass_array[n + n*time] = buddy_dictionary['m']
-                eccentricity_array[n + n*time] = buddy_dictionary['e']
-                period_array[n+n*time] = buddy_dictionary['P']
-                semi_major_axis_array[n + n*time] = buddy_dictionary['a']
-                inclination_angle_array[n + n*time] = buddy_dictionary['i']
-                omega_array[n + n*time] = buddy_dictionary['w']
-                phi_array[n + n*time] = buddy_dictionary['phi']
-                k_array[n + n*time] = buddy_dictionary['K']
+                #print(len(self.aas_table)*time + n)
+                radial_velocity, error, date, buddy_dictionary = self.fake_rv_binary(n, m_min, period)
 
 
+                radial_velocity_array[len(self.aas_table)*time + n] = str(radial_velocity)
+                error_array[len(self.aas_table)*time + n] = str(error)
+                date_array[len(self.aas_table)*time + n] = str(date)
+
+                m1_array[len(self.aas_table)*time + n] = self.aas_table['ISO_MEANM'][n]
+                logg_array[len(self.aas_table)*time + n] = self.aas_table['LOGG'][n]
+
+                secondary_mass_array[len(self.aas_table)*time + n] = buddy_dictionary['m'].value
+                eccentricity_array[len(self.aas_table)*time + n] = buddy_dictionary['e']
+                period_array[len(self.aas_table)*time + n] = buddy_dictionary['P'].value
+                semi_major_axis_array[len(self.aas_table)*time + n] = buddy_dictionary['a'].value
+                inclination_angle_array[len(self.aas_table)*time + n] = buddy_dictionary['i'].value
+                omega_array[len(self.aas_table)*time + n] = buddy_dictionary['w'].value
+                phi_array[len(self.aas_table)*time + n] = buddy_dictionary['phi'].value
+                k_array[len(self.aas_table)*time + n] = buddy_dictionary['K'].value
             time += 1
-        return secondary_mass_array, eccentricity_array, period_array, semi_major_axis_array, inclination_angle_array, omega_array, phi_array, k_array
+        return radial_velocity_array, error_array, date_array, m1_array,secondary_mass_array, eccentricity_array, period_array, \
+               semi_major_axis_array, inclination_angle_array, omega_array, phi_array, k_array, logg_array
+
+    def table_maker(self,  m_min, period, times):
+        arrays = self.buddy_array_maker( m_min, period, times)
+        b_table = Table( [arrays[0], arrays[1], arrays[2],
+                          arrays[3], arrays[4], arrays[5],
+                          arrays[6], arrays[7], arrays[8],
+                          arrays[9], arrays[10], arrays[11],
+                          arrays[12]],
+                         names=( 'str_rv', 'str_err', 'str_date', 'M1','m2', 'e', 'P', 'a','i', 'w', 'phi', 'K', "logg"),
+                         dtype=('str', 'str', 'str', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8','f8', 'f8')
+                         )
+        return b_table
 
