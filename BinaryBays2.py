@@ -1,16 +1,26 @@
-from astropy.table import Table, Column, vstack
 import numpy as np
 import scipy.stats as sps
+import datetime as dt
+from scipy import optimize
 import astropy.units as u
 from astropy.constants import G, sigma_sb, c
 
-import matplotlib.pyplot as plt
+"""
+IMPORTANT NOTE!!!!!!
+You must have scipy version 1.2.0 or better. The way newtons method is set up it used a new vectorization that only is
+not available in 1.1.0
+"""
+
 class BinaryBays2:
     def __init__(self,AAS_TABLE):
         self.AAS_TABLE = AAS_TABLE
 
     def buddy_values(self, N, m_min, period):
+
+        # Stratified sampling making full tables for this.
+
         """
+
         Makes a set of orbital paramiters from random distributions, to be used with other programs to make our collection
         of modled observations
 
@@ -83,21 +93,6 @@ class BinaryBays2:
         #           phi_buddy, K_buddy, self.AAS_TABLE['APOGEE_ID'][N]]
         return buddy_dict
 
-    def buddy_table(self, buddy_dict):
-        """
-        Takes the output from buddy_values and turns it into an astropy table. The goal is to have a table of
-        values from the simulations. Some of
-        """
-        b_table = Table([[False],
-                           [buddy_dict['m'].value], [buddy_dict['e'].value], [buddy_dict["P"].value], [buddy_dict["a"].value],
-                           [buddy_dict["i"].value], [buddy_dict["w"].value], [buddy_dict['phi'].value], [buddy_dict["K"].value],
-                           [0], [buddy_dict["ID"]]
-                           ],
-                          names = ('Binary','m','e','P','a','i','w','phi','K','P-value','APOGEE_ID'),
-                          dtype=('b','f8','f8','f8','f8','f8','f8','f8','f8','f8','str')
-                         )
-        return b_table
-
     """ 
     Define a bunch of smaller functions I need to get the radial velocity values
     """
@@ -107,8 +102,12 @@ class BinaryBays2:
     def _g(self, E, M, ec):
         return E - ec*np.sin(E) - M
 
-    def _gp(self, E, ec):
+    def _gp(self, E, M, ec):
         return 1 - ec*np.cos(E)
+
+    """
+    Use the scipy.optomize.newton for _NR_E and _NR_f
+    """
 
     def _NR_E(self, M, ec):
         E = []
@@ -116,33 +115,35 @@ class BinaryBays2:
             e_i = m  # Start with E_i = M
             delta = 1  # Give it a value to enter the loop
             while abs(delta) > 1e-8:
-                e_i1 = e_i - self._g(e_i, m, ec) / self._gp(e_i, ec)
+                e_i1 = e_i - self._g(e_i, m, ec) / self._gp(e_i, m, ec)
                 delta = e_i1 - e_i
                 e_i = e_i1
                 # print(e_i, e_i1, delta)
+
             assert self._g(e_i1, m, ec) < 1e-8  # Double check things work the right way
             E.append(e_i1)
+        print('Function check for my newton', self._g(E, M, ec))
         return np.array(E)
 
     def _h(self, f, E, ec):
         return np.cos(f) - (np.cos(E) - ec) / (1 - ec * np.cos(E))
 
-    def _hp(self, f):
+    def _hp(self, f, E, ec):
         return -1 * np.sin(f)
 
-    def _NR_f(self, E, ec):
-        f = []
-        for e in E:
-            f_i = e  # Start with E_i = M
-            delta = 1  # Give it a value to enter the loop
-            while abs(delta) > 1e-8:
-                f_i1 = f_i - self._h(f_i, e, ec) / self._hp(f_i)
-                delta = f_i1 - f_i
-                f_i = f_i1
-
-            assert self._h(f_i1, e, ec) < 1e-8
-            f.append(f_i1)
-        return np.array(f)
+    # def _NR_f(self, E, ec):
+    #     f = []
+    #     for e in E:
+    #         f_i = e  # Start with E_i = M
+    #         delta = 1  # Give it a value to enter the loop
+    #         while abs(delta) > 1e-8:
+    #             f_i1 = f_i - self._h(f_i, e, ec) / self._hp(f_i)
+    #             delta = f_i1 - f_i
+    #             f_i = f_i1
+    #
+    #         assert self._h(f_i1, e, ec) < 1e-8
+    #         f.append(f_i1)
+    #     return np.array(f)
 
     # Make the Jitter a function that we call
     def _jitter(self, N, a, b):
@@ -161,7 +162,9 @@ class BinaryBays2:
         After I have a set of paramiters form the buddy_values I want to make a fake Radial Velocity Measurment
         based on those values and the Primary Stars Values.
         """
+
         buddy_dict = self.buddy_values(N,m_min, period)
+
         date = self.AAS_TABLE['RADIAL_DATE'][N]
 
         if jitter:
@@ -171,55 +174,27 @@ class BinaryBays2:
         else:
             err = self.AAS_TABLE['RADIAL_ERR'][N]*u.km/u.s
 
-        # # This is some stuff that cy_rv_from_elements needs for it's time input. Not sure why but it doens't
-        # # work without these few lines. i.e. DO NOT TOUCH!
-        # t_buddy = Time(date, format = 'mjd')
-        #
-        # t_buddy = t_buddy.tcb.mjd
-        #
-        # procb = ArrayProcessor(t_buddy)
-        #
-        # t_buddy, = procb.prepare_arrays()
-        #
-        # td0 = t_buddy[0]
-        #
-        # td0 = Time(td0, format = 'mjd')
-        #
-        # # Makes the observed radial velocity in the binaries Barrycenter.
-        # # buddy_dict = [m_buddy, e_buddy, P_buddy, a_buddy, i_buddy, w_buddy,
-        # #           phi_buddy, K_buddy, self.AAS_TABLE['APOGEE_ID'][N]]
-        #
-        # rv_buddy = cy_rv_from_elements(t_buddy, buddy_dict["P"].to(u.day).value, 1. , buddy_dict["e"].value, buddy_dict["w"].value,
-        #                                buddy_dict["phi"].value, td0.tcb.mjd,
-        #                                anomaly_tol = 1E-10, anomaly_maxiter = 128)
-        #
-        # # Then we move the velocity to be in our reference frame. This is the exact analytical radial velcity of a star
-        # # with the given paramiters.
-        # rv_buddy = (buddy_dict["K"] * rv_buddy + self.AAS_TABLE['VHELIO_AVG'][N] * u.km/ u.s)
-
         M = 2 * np.pi / buddy_dict['P'].value * date - buddy_dict['phi'].value
 
-        E = self._NR_E(M, buddy_dict['e'].value)
-        f = self._NR_f(E, buddy_dict['e'].value)
+        #print('M values', M, 'eccentricity', buddy_dict['e'].value,'\n')
+
+        ec = buddy_dict['e'].value
+
+
+        E0 = M.copy()
+        E = optimize.newton(self._g, E0, fprime = self._gp, args=(M, ec), maxiter = 50)
+
+        #assert all(self._g(E, M, ec) < 1e-7)
+        f0 = E.copy()
+        f = optimize.newton(self._h, f0, fprime=self._hp, args=(E, buddy_dict['e'].value))
+
         rv_buddy = buddy_dict['K']*(np.cos(buddy_dict['w'].value + f) + buddy_dict['e'].value * np.cos(buddy_dict['w']))
         rv_buddy += self.AAS_TABLE['VHELIO_AVG'][N]*u.km/u.s
 
-        # Add on some machine error
-        # for n in range(len(self.AAS_TABLE['RADIAL_ERR'][N])):
-        #     rv_buddy[n] += np.random.normal(0, self.AAS_TABLE['RADIAL_ERR'][N][n]) * u.km/u.s
-        # rv_buddy_foo = rv_buddy.copy()
-        for n in range(len(err)):
-            rv_buddy[n] += np.random.normal(0, err[n].value) * u.km/u.s
-        # data = RVData(t=date, rv=rv_buddy, stddev=err)
-        # ax = data.plot()
-        # ax.plot(date,rv_buddy_foo,'x', color = 'red')
-        # ax.set_xlabel("Time [JD]")
-        # ax.set_ylabel("RV [km/s]")
-        # plt.show()
-        # plt.close()
+        rv_buddy += err * np.random.normal(0, 1, len(rv_buddy)) # This should be the same as the for loop in the comment
+                                                                # block below. This will do it slightly faster
+
         return rv_buddy, err, buddy_dict
-    # TODO: Get rid of the reduce option. I never use it and it just causes more
-    #       problems then it's worth.
 
     def Real_Data_Beta(self,a = 0.3, b = 0.61):
         """
@@ -301,13 +276,14 @@ class BinaryBays2:
         beta_dict = {x: [] for x in bins}
         loop = 0
         while loop < loops:
-            #print('Starting loop {}'.format(loop))
+            print('Starting loop {}'.format(loop))
             beta = self.BetaMaster(m_min, period, fraction, 1, jitter, a, b)
             beta = self.beta_hist(beta, bins)
             for n in range(len(bins) - 1):
                 beta_dict[beta[1][n]].append(beta[0][n])
-            #print('Done with loop {}'.format(loop))
+            #  print('Done with loop {}'.format(loop))
             loop += 1
+        print("Done with fraction ", fraction, dt.datetime.now())
         return beta_dict
 
     def _beta_mod_stats(self, beta_array):
@@ -325,6 +301,7 @@ class BinaryBays2:
         sigma:  Standard deviation
         gamma:  Skew
         """
+
         mu = np.mean(beta_array)
         sigma = np.std(beta_array)
         return mu, sigma
@@ -362,19 +339,25 @@ class BinaryBays2:
         sy_beta_dict = self.beta_mod_dict(m_min, period, bf, loops, jitter, a, b, bins)
 
         ln_ans = 0
+
+        #TO DO: Get rid of this.
         for key in rd_beta_hist_dict.keys():
             # While working on this I want to make plots of each bin Just so I can watch this happen.
             mean, std, = self._beta_mod_stats(sy_beta_dict[key])  # Find the mean, std, and skew of the bin
 
-
+            if std == 0: # Make sure I don't devide by zero
+                std = 1e-8
             lnl = -1/2*((rd_beta_hist_dict[key] - mean)**2/std**2 + np.log(2*np.pi*std**2))
 
             ln_ans += lnl
 
         return ln_ans
 
+    # Include the jitter???
+
+
     def lnprior(self, bf, a, b):
-        if 0 < bf < 1 and -10 < a < 0.5 and 0 < b < 2:
+        if 0.01 < bf < 1 and -10 < a < 0.5 and 0 < b < 2:
             return 0
         return -np.inf
 
@@ -384,3 +367,16 @@ class BinaryBays2:
         if not np.isfinite(lp):
             return -np.inf
         return lp + self.lnlike(m_min, period,bf, loops, jitter, a, b, bins)
+
+
+
+    """
+    Start with more starts and short steps, to get a good guess of what the paramiter space looks like, then go into more 
+    depth when I see where the minimums are. 
+    
+    500 - 10,000 final steps when all is said and done. 
+    
+    How many Threads? 
+    I'm doing 8 as of right now. (N - 1)*2 where N is the max number of threds.
+    
+    """
