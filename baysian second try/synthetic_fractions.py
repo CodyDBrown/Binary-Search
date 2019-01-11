@@ -17,6 +17,6 @@ def synthetic_fractions(num_of_galaxies, cloud, bf, m_min, mu, sigma, a, b):
 
         syn_fraction_j = binary_fraction(rv_syn_j, err_syn_j)
         syn_fractions.append(syn_fraction_j)
-
+        print("Done with ", galaxy_count)
         galaxy_count += 1
     return syn_fractions
