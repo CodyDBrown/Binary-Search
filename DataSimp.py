@@ -5,7 +5,7 @@ import astropy.units as u
 from astropy.constants import G, sigma_sb, c
 
 
-class BinaryDataClean3:
+class DataSimp:
     """
     Goal of this class is it have all of the data simplifying stuff in one place.
     The process should go as follows,
@@ -66,8 +66,10 @@ class BinaryDataClean3:
 
         # Able to togle weather or not I want to remove SNR points
         if snr_cut:
+            all_visit_data = all_visit_data[np.isfinite(all_visit_data['SNR'])]
             all_visit_data = all_visit_data[all_visit_data['SNR'] >= 5]  # Only keep SNR greater than..
         return all_visit_data[all_visit_data['VHELIO'] < 10 ** 4]  # Keep velocities les than light speed ish
+
 
     def nvisits_cut(self, all_average_data, n_cut):
         """
@@ -166,13 +168,15 @@ class BinaryDataClean3:
             if len(gd_foo) < 1:
                 print("No good fits in 3 sigma of erros. Star {}, row {}".format(all_average_data['APOGEE_ID'][j], j))
             else:
-                while len(gd) <= 1:
+
+                while len(gd) < 1:
                     gd, = np.where(( (np.abs((10**iso_small_table['LOGTE'])-star_teff) <= limit_t) &
                             (np.abs(iso_small_table['LOGG']-star_logg) <= limit_g) &
                             (np.abs(iso_small_table['FEH']-star_feh) <= limit_f) ) )
                     limit_t += all_average_data['TEFF_ERR'][j]/100  # Exand the limit band, take log10
                     limit_g += all_average_data['LOGG_ERR'][j]/100
                     limit_f += all_average_data['FE_H_ERR'][j]/100
+
 
                 # Take the list of isochrone fittings and find the mena, mediant, and
                 # deviation for the values they gave back. If they weren't any good
@@ -198,6 +202,7 @@ class BinaryDataClean3:
                     iso_meanL[j] = np.nan
                     iso_medianL[j] = np.nan
                     iso_stdL[j] = np.nan
+
                 if j in np.arange(0,len(all_average_data), 100):
                     print("Done with %f"%j)
 
@@ -321,21 +326,29 @@ class BinaryDataClean3:
         ALL_AVERAGE_SIMPLIFIED_foo = Table(all_average_data)
         all_visit_data = Table(all_visit_data)
 
-        RV_Column = Column(name = 'RADIALV', data = np.ones(len(ALL_AVERAGE_SIMPLIFIED_foo)), dtype = 'U151') #Right now filling it with ones just as a place holder
-        ERR_Column = Column(name = 'RADIAL_ERR', data = np.ones(len(ALL_AVERAGE_SIMPLIFIED_foo)), dtype = 'U151') # Why a string limit of 151? Because that's when I stopped getting errors.
-        DATE_Column = Column(name = 'RADIAL_DATE', data = np.ones(len(ALL_AVERAGE_SIMPLIFIED_foo)), dtype = 'U151')
+        RV_Column = Column(name = 'RADIALV',
+                           data = np.ones(len(ALL_AVERAGE_SIMPLIFIED_foo)),
+                           dtype = 'object') #Right now filling it with ones just as a place holder
+        ERR_Column = Column(name = 'RADIAL_ERR',
+                            data = np.ones(len(ALL_AVERAGE_SIMPLIFIED_foo)),
+                            dtype = 'object') # Why a string limit of 151? Because that's when I stopped getting errors.
+        DATE_Column = Column(name = 'RADIAL_DATE',
+                             data = np.ones(len(ALL_AVERAGE_SIMPLIFIED_foo)),
+                             dtype = 'object')
+
         ALL_AVERAGE_SIMPLIFIED_foo.add_columns([RV_Column,ERR_Column,DATE_Column], [0,0,0])
-        all_visit_data.sort(['APOGEE_ID', 'JD'])
+
         count = 0
         for ID in ALL_AVERAGE_SIMPLIFIED_foo['APOGEE_ID']:
-            rv_foo = np.array(all_visit_data['VHELIO'][all_visit_data['APOGEE_ID'] == ID])
-            rv_err_foo = np.array(all_visit_data['VRELERR'][all_visit_data['APOGEE_ID'] == ID])
+            mask = all_visit_data['APOGEE_ID'] == ID
+            rv_foo = np.array(all_visit_data['VHELIO'][mask])
+            rv_err_foo = np.array(all_visit_data['VRELERR'][mask])
             rv_err_foo = np.array([.1 if n < 0.1 else n for n in rv_err_foo])
-            date_foo = np.array(all_visit_data['JD'][all_visit_data['APOGEE_ID'] == ID])
+            date_foo = np.array(all_visit_data['JD'][mask])
 
-            ALL_AVERAGE_SIMPLIFIED_foo['RADIALV'][count] = str(rv_foo).strip('[]')
-            ALL_AVERAGE_SIMPLIFIED_foo['RADIAL_ERR'][count] = str(rv_err_foo).strip('[]')
-            ALL_AVERAGE_SIMPLIFIED_foo['RADIAL_DATE'][count] = str(date_foo).strip('[]')
+            ALL_AVERAGE_SIMPLIFIED_foo['RADIALV'][count] = rv_foo
+            ALL_AVERAGE_SIMPLIFIED_foo['RADIAL_ERR'][count] = rv_err_foo
+            ALL_AVERAGE_SIMPLIFIED_foo['RADIAL_DATE'][count] = date_foo
             count += 1
         return ALL_AVERAGE_SIMPLIFIED_foo
 
