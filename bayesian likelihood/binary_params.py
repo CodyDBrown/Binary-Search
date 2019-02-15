@@ -33,7 +33,7 @@ def binary_params(m_min, mu, sigma, star_radius, star_mass):
 
         r_peri = ((1 - eccentricity) * semi_major_axis).to(u.solRad)
         emergency += 1
-        if emergency > 20:
+        if emergency > 100:
             print("You got stuck")
             break
     n_holder = (2*np.pi) / p_buddy

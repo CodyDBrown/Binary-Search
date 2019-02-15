@@ -5,8 +5,8 @@ from error_with_jitter import error_with_jitter
 from binary_fraction import binary_fraction
 
 
-def lnprob(theta, num_of_galaxies, cloud, m_min, a, b):
-    bf, mu, sigma = theta
+def lnprob(theta, num_of_galaxies, cloud, m_min):
+    bf, a, b, mu, sigma = theta
 
     error_j = error_with_jitter(cloud['RADIAL_ERR'],
                                                  a,
