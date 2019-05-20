@@ -35,9 +35,9 @@ if __name__ == "__main__":
     lmc['RADIALV'].unit = u.km / u.s
     lmc['RADIAL_ERR'].unit = u.km / u.s
 
-    ndim, nwalkers = 5, 10
-    threads = 6
-    nsteps = 100
+    ndim, nwalkers = 5, 14
+    threads = 7
+    nsteps = 1000
 
     # A = [0.6, 0.3, -0.1]
     # B = [1, 0.61, 0]
@@ -56,7 +56,7 @@ if __name__ == "__main__":
     sampler.run_mcmc(pos, nsteps)
     del sampler.pool
     # pickle "sampler"
-    outfile = "detection_lmc.pck"
+    outfile = "detection_lmc-2019-02-27.pck"
     if os.path.exists(outfile): os.remove(outfile)
     pickle.dump(sampler, open(outfile, "wb"))
     # sampler = pickle.load( open( "save.p", "rb" ) )

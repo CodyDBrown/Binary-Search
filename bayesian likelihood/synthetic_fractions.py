@@ -10,10 +10,11 @@ def synthetic_fractions(num_of_galaxies, cloud, bf, m_min, mu, sigma, a, b):
     Inputs
     ----------
     num_of_galaxies:    How many synthetic galaxies you want to make
-    cloud:              Astropy table object. The table is used as a basis for making the synthetic galaxies. Should have
-                        been made through the DataSimp process.
+    cloud:              Astropy table object. The table is used as a basis for making the synthetic galaxies. Should
+                        have been made through the DataSimp process.
     bf:                 Desired binary fraction that you want in the synthetic galaxy. Should be a number between [0,1]
-    m_min:              Minimum mass you want to consider for a secondary object. Needs to have astropy units of .JupyterMass
+    m_min:              Minimum mass you want to consider for a secondary object. Needs to have astropy units
+                        of .JupyterMass
     mu:                 Mean value used in making the period distribution for binary orbits
     sigma:              Standard deviation for the period distribution for the binary orbits
     a:                  Jitter parameter, y-intercept for the line in log space
