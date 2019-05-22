@@ -107,18 +107,26 @@ class DataSimp:
 
         return all_average_data
 
-    def iso_fit(self,all_average_data, iso_data):
+    def iso_fit(self, all_average_data, iso_data):
         """
         Isochrone fitting. I have to turn all_average_data into an Astropy table
         just because I don't know how to do it as the data object. I should figure
         out how to do it because the data object is less memory intensive and seams
         to run a little faster.
 
-        CHANGES TO V3: I want to find the 'best fit' for the isochrone table. But the 'best fit' is hard to define. So
+        CHANGES TO V3: I want to find the 'best fit' for the isochrone table. But the 'best fit' is hard to
+        define. So
         I'm going to start by setting the limit of the fit equal to zero, look for an exact match. Then slowly expand the
         range that we look at untill we find a fit. When we expand the range we look at we want to expand each paramiter
-        based on the error in that measurment. We'll examd the limit for each paramiters by half of it's recorded error.
+        based on the error in that measurment. We'll examd the limit for each paramiters by half of it's
+        recorded error.
         Hopefully we just find one fit, and it makes physical since.
+
+        CHANGES TO V4: Want to find the distance in log space to the observed values to the isochrone values.
+        This goal
+        is to have a better way of finding the best fit and then keep all stars so that we never throw away
+        any values.
+        I would like it if we still took into account the size of the errors.
 
         Inputs
         ----------
@@ -134,91 +142,75 @@ class DataSimp:
         all_average_data = Table(all_average_data)
 
         # Make some zero arrays that I'll fill with stellar paramiters
-        iso_meanM = np.zeros(len(all_average_data))
-        iso_medianM = np.zeros(len(all_average_data))
-        iso_stdM = np.zeros(len(all_average_data))
+        iso_M = np.zeros(len(all_average_data))
 
-        iso_meanL = np.zeros(len(all_average_data))
-        iso_medianL = np.zeros(len(all_average_data))
-        iso_stdL = np.zeros(len(all_average_data))
+        iso_L = np.zeros(len(all_average_data))
 
+        iso_check_dist = np.zeros(len(all_average_data))
         # Only want to look at stars that have an age greater than 1 giga year (billion)
         iso_data_foo = iso_data[iso_data["AGE"] >= 1e9]
+
         # For each row in all_average_data, find isochrone rows that have similar
         # values, and make a list of all of those entries.
         for j in range(len(all_average_data)):
             star_teff = all_average_data['TEFF'][j]
             star_logg = all_average_data['LOGG'][j]
-            star_feh  = all_average_data['FE_H'][j]
+            star_feh = all_average_data['FE_H'][j]
 
             gd = []
-            limit_t = 0     # Limit range for TEFF
-            limit_g = 0     # Limit range for LOGG
-            limit_f = 0     # Limit range for FE_H
+            limit_t = 0  # Limit range for TEFF
+            limit_g = 0  # Limit range for LOGG
+            limit_f = 0  # Limit range for FE_H
 
             # For time reasons I want to cut down the isochrone table into a smaller table for the max range I want to
-            # look at. Then I can expand the search range I want to look at but then I'm only looking at this one table
+            # look at. Then I can expand the search range I want to look at but then I'm only looking at this
+            # one table
             # and not waisting time looking over the entire table each time.
+            sig = 2
+            gd_foo, = np.where((
+                    (np.abs((10 ** iso_data_foo['LOGTE']) - star_teff) <= sig * all_average_data['TEFF_ERR'][j]) &
+                    (np.abs(iso_data_foo['LOGG'] - star_logg) <= sig * all_average_data['LOGG_ERR'][j]) &
+                    (np.abs(iso_data_foo['FEH'] - star_feh) <= sig * all_average_data['FE_H_ERR'][j])))
 
-            gd_foo, = np.where(((np.abs((10 ** iso_data_foo['LOGTE']) - star_teff) <= 3*all_average_data['TEFF_ERR'][j]) &
-                            (np.abs(iso_data_foo['LOGG'] - star_logg) <= 3*all_average_data['LOGG_ERR'][j]) &
-                            (np.abs(iso_data_foo['FEH'] - star_feh) <= 3*all_average_data['FE_H_ERR'][j])))
-            iso_small_table = iso_data_foo[gd_foo]
-            iso_small_table = iso_small_table[iso_small_table["AGE"] >= 1e9]
-            if len(gd_foo) < 1:
-                print("No good fits in 3 sigma of erros. Star {}, row {}".format(all_average_data['APOGEE_ID'][j], j))
-            else:
+            while len(gd_foo) < 1:
+                gd_foo, = np.where((
+                        (np.abs((10 ** iso_data_foo['LOGTE']) - star_teff) <= sig * all_average_data['TEFF_ERR'][j]) &
+                        (np.abs(iso_data_foo['LOGG'] - star_logg) <= sig * all_average_data['LOGG_ERR'][j]) &
+                        (np.abs(iso_data_foo['FEH'] - star_feh) <= sig * all_average_data['FE_H_ERR'][j])))
+                iso_small_table = iso_data_foo[gd_foo]
+                sig += 1
+            iso_small_table = Table(iso_data_foo[gd_foo])
 
-                while len(gd) < 1:
-                    gd, = np.where(( (np.abs((10**iso_small_table['LOGTE'])-star_teff) <= limit_t) &
-                            (np.abs(iso_small_table['LOGG']-star_logg) <= limit_g) &
-                            (np.abs(iso_small_table['FEH']-star_feh) <= limit_f) ) )
-                    limit_t += all_average_data['TEFF_ERR'][j]/100  # Exand the limit band, take log10
-                    limit_g += all_average_data['LOGG_ERR'][j]/100
-                    limit_f += all_average_data['FE_H_ERR'][j]/100
+            # Find the 'distance' from the star to the nearest isochrone neighbor
+            iso_distance = np.sqrt((iso_small_table['LOGTE'] - np.log10(star_teff)) ** 2 +
+                                   (iso_small_table['LOGG'] - star_logg) ** 2 +
+                                   (iso_small_table['FEH'] - star_feh) ** 2)
 
+            col_dist = Column(name='dist', data=iso_distance)
 
-                # Take the list of isochrone fittings and find the mena, mediant, and
-                # deviation for the values they gave back. If they weren't any good
-                # firts then make it nan
-                if len(gd) > 0:
-                    iso_meanM[j] = np.mean(iso_small_table['MASS'][gd])
-                    iso_medianM[j] = np.median(iso_small_table["MASS"][gd])
-                    iso_stdM[j] = np.std(iso_small_table["MASS"][gd])
+            iso_small_table.add_column(col_dist)
+            iso_small_table.sort('dist')
+            iso_M[j] = iso_small_table['MASS'][0]
+            iso_L[j] = 10 ** (iso_small_table["LOGL"][0])
+            iso_check_dist[j] = iso_small_table['dist'][0]
+            #         print(iso_M, iso_L, iso_small_table['dist'][0:4])
 
-                    foo =10**iso_small_table['LOGL'][gd] # Isochrone table is in log10(L)
-                    iso_meanL[j] = np.mean(foo)
-                    iso_medianL[j] = np.median(foo)
-                    iso_stdL[j] = np.std(foo)
-                    #iso_meanL[j] = np.mean(iso_data['LOGL'][gd])
-                    #iso_medianL[j] = np.median(iso_data['LOGL'][gd])
-                    #iso_stdL[j] = np.std(iso_data['LOGL'][gd])
+            iso_small_table.remove_column("dist")
 
-                else:
-                    iso_meanM[j] = np.nan
-                    iso_medianM[j] = np.nan
-                    iso_stdM[j] = np.nan
-
-                    iso_meanL[j] = np.nan
-                    iso_medianL[j] = np.nan
-                    iso_stdL[j] = np.nan
-
-                if j in np.arange(0,len(all_average_data), 100):
-                    print("Done with %f"%j)
+            if j in np.arange(0, len(all_average_data), 100):
+                print("Done with %f" % j)
 
         # Now add on the mass luminocity and radius values
-        all_average_data['ISO_MEANM'] = iso_meanM*u.solMass
-        all_average_data["ISO_MEDIANM"] = iso_medianM * u.solMass
-        all_average_data['ISO_STDM'] = iso_stdM * u.solMass
+        all_average_data['ISO_MASS'] = iso_M * u.solMass
 
-        all_average_data['ISO_MEANL'] = (iso_meanL) * u.solLum
-        all_average_data["ISO_MEDIANL"] = (iso_medianL) * u.solLum
-        all_average_data['ISO_STDL'] = (iso_stdL) * u.solLum
+        all_average_data['ISO_LUM'] = (iso_L) * u.solLum
 
-        iso_meanR = np.sqrt( all_average_data['ISO_MEANL'] / (4 * np.pi * sigma_sb * (all_average_data["TEFF"]*u.K)**4 ) ).to(u.solRad)
-        all_average_data['ISO_MEANR'] = iso_meanR
-        all_average_data = all_average_data[np.isfinite(all_average_data['ISO_MEANM'])]
-        all_average_data = all_average_data[all_average_data["ISO_MEANM"] > 0]
+        iso_meanR = np.sqrt(all_average_data['ISO_LUM'] /
+                            (4 * np.pi * sigma_sb * (all_average_data["TEFF"] * u.K) ** 4)).to(u.solRad)
+        all_average_data['ISO_RAD'] = iso_meanR
+        all_average_data['ISO_FIT_DIST'] = iso_check_dist
+        #     all_average_data = all_average_data[np.isfinite(all_average_data['ISO_MEANM'])]
+        #     all_average_data = all_average_data[all_average_data["ISO_MEANM"] > 0]
         return all_average_data
 
     def troup_fits(self,all_average_data,):
