@@ -1,5 +1,7 @@
 from scipy.stats import chi2
 import chi_sq_mean
+
+
 def binary_detection(rv, error):
     """
     Determines if the rv and error are in a binary or not.

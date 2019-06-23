@@ -42,18 +42,18 @@ if __name__ == "__main__":
                                          lmc["RADIAL_ERR"])
     lmc_detection_rate_j = binary_fraction(lmc['RADIALV'], lmc_err_j)
 
-    ndim, nwalkers = 5, 20
+    ndim, nwalkers = 5, 14
     pos = [np.array([0.5, 0, 0.61, 3, 2]) + 0.3 * np.random.randn(ndim) for i in range(nwalkers)]
 
     threads = 8
-    nsteps = 600
+    nsteps = 1000
 
-    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, threads=threads, args=(25, lmc, 100 * u.jupiterMass,))
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, threads=threads, args=(50, lmc, 100 * u.jupiterMass,))
 
     sampler.run_mcmc(pos, nsteps)
     del sampler.pool
     # pickle "sampler"
-    outfile = "detection_smc2.pck"
+    outfile = "detection_smc-2019-03-10.pck"
     if os.path.exists(outfile): os.remove(outfile)
     pickle.dump(sampler, open(outfile, "wb"))
     # sampler = pickle.load( open( "save.p", "rb" ) )

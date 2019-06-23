@@ -38,8 +38,8 @@ def synthetic_galaxy(cloud, bf, m_min, mu, sigma):
 
             # Make a dictionary of orbital parameters that will be used to make
             buddy_dictionary = binary_params(m_min, mu, sigma,
-                                             cloud['ISO_MEANR'][n]*u.solRad,
-                                             cloud['ISO_MEANM'][n]*u.solMass)
+                                             cloud['ISO_RAD'][n]*u.solRad,
+                                             cloud['ISO_MASS'][n]*u.solMass)
 
             syn_binary_rv = rv_from_param(cloud['VHELIO_AVG'][n]*u.km/u.s, buddy_dictionary['k'],
                                           buddy_dictionary['p'].value, buddy_dictionary['e'],
